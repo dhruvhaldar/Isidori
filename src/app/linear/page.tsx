@@ -1,0 +1,163 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import axios from "axios";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MatrixInput } from "@/components/matrix-input";
+
+function createMatrix(rows: number, cols: number) {
+  return Array(rows).fill(0).map(() => Array(cols).fill(0));
+}
+
+export default function LinearSystemsPage() {
+  const [n, setN] = useState(2);
+  const [m, setM] = useState(1);
+  const [p, setP] = useState(1);
+  const [q, setQ] = useState(1); // Disturbance dim
+
+  const [A, setA] = useState(createMatrix(n, n));
+  const [B, setB] = useState(createMatrix(n, m));
+  const [C, setC] = useState(createMatrix(p, n));
+  const [E, setE] = useState(createMatrix(n, q));
+
+  const [vStar, setVStar] = useState<number[][] | null>(null);
+  const [ddpResult, setDdpResult] = useState<{ is_solvable: boolean, V_star: number[][], F?: number[][] } | null>(null);
+
+  useEffect(() => {
+    setA(old => resizeMatrix(old, n, n));
+    setB(old => resizeMatrix(old, n, m));
+    setC(old => resizeMatrix(old, p, n));
+    setE(old => resizeMatrix(old, n, q));
+  }, [n, m, p, q]);
+
+  const resizeMatrix = (mat: number[][], rows: number, cols: number) => {
+    const newMat = createMatrix(rows, cols);
+    for (let r = 0; r < Math.min(rows, mat.length); r++) {
+      for (let c = 0; c < Math.min(cols, mat[0].length); c++) {
+        newMat[r][c] = mat[r][c];
+      }
+    }
+    return newMat;
+  };
+
+  const handleComputeVStar = async () => {
+    try {
+      const res = await axios.post("/api/vstar", { A, B, C });
+      setVStar(res.data.V_star);
+    } catch (err) {
+      console.error(err);
+      alert("Error computing V*");
+    }
+  };
+
+  const handleCheckDDP = async () => {
+    try {
+      const res = await axios.post("/api/ddp", { A, B, C, E });
+      setDdpResult(res.data);
+    } catch (err) {
+      console.error(err);
+      alert("Error checking DDP");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold">Linear Systems Analysis</h1>
+        <p className="text-muted-foreground">
+          Analyze geometric properties of linear systems: invariance, DDP, and more.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>System Dimensions</CardTitle>
+          <CardDescription>Define the size of your system matrices.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>States (n)</Label>
+              <Input type="number" min="1" value={n} onChange={(e) => setN(parseInt(e.target.value) || 1)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Inputs (m)</Label>
+              <Input type="number" min="1" value={m} onChange={(e) => setM(parseInt(e.target.value) || 1)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Outputs (p)</Label>
+              <Input type="number" min="1" value={p} onChange={(e) => setP(parseInt(e.target.value) || 1)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Disturbances (q)</Label>
+              <Input type="number" min="1" value={q} onChange={(e) => setQ(parseInt(e.target.value) || 1)} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>System Matrices</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <MatrixInput label="A (System Matrix)" rows={n} cols={n} value={A} onChange={setA} />
+            <MatrixInput label="B (Input Matrix)" rows={n} cols={m} value={B} onChange={setB} />
+            <MatrixInput label="C (Output Matrix)" rows={p} cols={n} value={C} onChange={setC} />
+            <MatrixInput label="E (Disturbance Matrix)" rows={n} cols={q} value={E} onChange={setE} />
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Controlled Invariance (V*)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button onClick={handleComputeVStar} className="w-full">Compute V*</Button>
+              {vStar && (
+                <div className="mt-4">
+                  <Label>V* Basis Matrix ({vStar.length}x{vStar[0]?.length || 0})</Label>
+                  <pre className="bg-secondary p-2 rounded-md overflow-x-auto text-xs">
+                    {JSON.stringify(vStar, null, 2)}
+                  </pre>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Columns represent basis vectors for V*. If empty, V* is trivial or zero.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Disturbance Decoupling (DDP)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button onClick={handleCheckDDP} variant="secondary" className="w-full">Check DDP Solvability</Button>
+              {ddpResult && (
+                <div className="mt-4 space-y-2">
+                  <div className={`p-2 rounded-md font-bold text-center ${ddpResult.is_solvable ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                    {ddpResult.is_solvable ? "Solvable" : "Not Solvable"}
+                  </div>
+                  {ddpResult.is_solvable && ddpResult.F && (
+                    <div>
+                      <Label>Feedback Matrix F</Label>
+                      <pre className="bg-secondary p-2 rounded-md overflow-x-auto text-xs">
+                        {JSON.stringify(ddpResult.F, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}

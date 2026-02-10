@@ -1,0 +1,143 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import axios from "axios";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MatrixInput } from "@/components/matrix-input";
+// Need to import chart component dynamically to avoid SSR issues with recharts?
+// Recharts usually works fine with Next.js App Router if "use client" is present.
+import dynamic from 'next/dynamic';
+
+const SystemChart = dynamic(() => import('@/components/system-chart').then(mod => mod.SystemChart), { ssr: false });
+
+function createMatrix(rows: number, cols: number) {
+  return Array(rows).fill(0).map(() => Array(cols).fill(0));
+}
+
+export default function SimulatePage() {
+  const [n, setN] = useState(2);
+  const [m, setM] = useState(1);
+  const [p, setP] = useState(1);
+  const [q, setQ] = useState(1);
+
+  // Default values for the example DDP system
+  // A=[[0, 1], [2, 0]], B=[[0], [1]], C=[[1, -1]], E=[[1], [1]]
+  const [A, setA] = useState([[0, 1], [2, 0]]);
+  const [B, setB] = useState([[0], [1]]);
+  const [C, setC] = useState([[1, -1]]);
+  const [E, setE] = useState([[1], [1]]);
+
+  const [simData, setSimData] = useState<any[]>([]);
+  const [ddpStatus, setDdpStatus] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // Only resize if dimensions change significantly, but here we just handle manual input.
+    // Actually, matrix input handles resizing if needed.
+    // But we initialized with specific values, so we should update n, m, p, q to match?
+    // Or just let user change them.
+    // If user changes n, we resize.
+  }, []);
+
+  // Update matrices when dimensions change
+  useEffect(() => {
+     setA(old => resizeMatrix(old, n, n));
+     setB(old => resizeMatrix(old, n, m));
+     setC(old => resizeMatrix(old, p, n));
+     setE(old => resizeMatrix(old, n, q));
+  }, [n, m, p, q]);
+
+  const resizeMatrix = (mat: number[][], rows: number, cols: number) => {
+    const newMat = createMatrix(rows, cols);
+    for (let r = 0; r < Math.min(rows, mat.length); r++) {
+      for (let c = 0; c < Math.min(cols, mat[0].length); c++) {
+        newMat[r][c] = mat[r][c];
+      }
+    }
+    return newMat;
+  };
+
+  const handleSimulate = async () => {
+    try {
+      const res = await axios.post("/api/simulate", { A, B, C, E });
+      const { time, y, d, is_ddp_solved } = res.data;
+      
+      const formattedData = time.map((t: number, i: number) => ({
+        time: parseFloat(t.toFixed(2)),
+        y: y[i][0] !== undefined ? y[i][0] : y[i], // Handle array or scalar
+        d: d[i]
+      }));
+      
+      setSimData(formattedData);
+      setDdpStatus(is_ddp_solved);
+    } catch (err) {
+      console.error(err);
+      alert("Error during simulation");
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold">System Simulation</h1>
+        <p className="text-muted-foreground">
+          Simulate the time response of the system under disturbance.
+          The system will attempt to reject the disturbance using DDP control if solvable.
+        </p>
+      </div>
+      
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+           <CardHeader>
+             <CardTitle>System Configuration</CardTitle>
+           </CardHeader>
+           <CardContent className="space-y-4">
+             <div className="grid grid-cols-4 gap-2">
+                <div className="space-y-1"><Label>n</Label><Input type="number" value={n} onChange={e => setN(parseInt(e.target.value)||1)} /></div>
+                <div className="space-y-1"><Label>m</Label><Input type="number" value={m} onChange={e => setM(parseInt(e.target.value)||1)} /></div>
+                <div className="space-y-1"><Label>p</Label><Input type="number" value={p} onChange={e => setP(parseInt(e.target.value)||1)} /></div>
+                <div className="space-y-1"><Label>q</Label><Input type="number" value={q} onChange={e => setQ(parseInt(e.target.value)||1)} /></div>
+             </div>
+             
+             <MatrixInput label="A" rows={n} cols={n} value={A} onChange={setA} />
+             <MatrixInput label="B" rows={n} cols={m} value={B} onChange={setB} />
+             <MatrixInput label="C" rows={p} cols={n} value={C} onChange={setC} />
+             <MatrixInput label="E (Disturbance)" rows={n} cols={q} value={E} onChange={setE} />
+             
+             <Button onClick={handleSimulate} className="w-full">Simulate Response</Button>
+           </CardContent>
+        </Card>
+        
+        <div className="space-y-6">
+          <Card className="h-full">
+            <CardHeader>
+              <CardTitle>Response Plot</CardTitle>
+              <CardDescription>
+                Output y(t) vs Disturbance d(t) (Sine wave)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {simData.length > 0 ? (
+                <div className="space-y-4">
+                   <SystemChart data={simData} />
+                   <div className={`p-2 rounded text-center text-sm font-semibold ${ddpStatus ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>
+                     {ddpStatus ? "DDP Solved & Applied" : "DDP Not Solvable (Open Loop / Best Effort)"}
+                   </div>
+                   <p className="text-xs text-muted-foreground">
+                     If DDP is solvable, the output should remain close to zero despite the disturbance.
+                   </p>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-64 border-2 border-dashed rounded-lg text-muted-foreground">
+                  Run simulation to view plot
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
