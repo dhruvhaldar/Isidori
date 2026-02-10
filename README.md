@@ -40,19 +40,33 @@ This project covers the following topics from the syllabus:
    cd isidori
    ```
 
-2. Install Python dependencies:
+2. Create and activate a virtual environment:
+   
+   Windows:
+   ```bash
+   python -m venv venv
+   .\venv\Scripts\activate
+   ```
+
+   macOS/Linux:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. Install Node.js dependencies:
+4. Install Node.js dependencies:
    ```bash
    npm install
    ```
 
 ### Usage
 
-1. Start the backend server:
+1. Start the backend server (ensure the virtual environment is activated):
    ```bash
    python api/index.py
    ```
